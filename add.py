@@ -4,7 +4,7 @@ import json
 import time
 
 # Your bot's token from BotFather
-bot_token = "YOUR_BOT_TOKEN"  # Replace with your bot token
+bot_token = "6996568724:AAFrjf88-0uUXJumDiuV6CbVuXCJvT-4KbY"  # Replace with your bot token
 
 # Define session files for different accounts
 session_files = ["account1", "account2", "account3"]  # Replace with your session names
