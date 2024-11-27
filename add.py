@@ -3,11 +3,18 @@ from pyrogram.errors import UserAlreadyParticipant, FloodWait, UsernameNotOccupi
 import json
 import time
 
-# Your bot's token from BotFather
+# Bot token from BotFather
 bot_token = "6996568724:AAFrjf88-0uUXJumDiuV6CbVuXCJvT-4KbY"  # Replace with your bot token
 
-# Define session files for different accounts
+# Your API ID and API Hash (from Telegram Developer Portal)
+api_id = "12834603"  # Replace with your API ID
+api_hash = "84a5daf7ac334a70b3fbd180616a76c6"  # Replace with your API Hash
+
+# List of session files for different accounts
 session_files = ["account1", "account2", "account3"]  # Replace with your session names
+
+# Store the active session index (initialize with None)
+active_session_index = None
 
 # Function to display available accounts
 def show_accounts():
@@ -68,7 +75,7 @@ async def add_single_member(client, group_chat, user_identifier):
         print(f"Error adding user {user_id}: {e}")
 
 # Handle bot commands and login selection
-app = Client("bot_session", bot_token=bot_token)  # Pass bot token here
+app = Client("bot_session", bot_token=bot_token, api_id=api_id, api_hash=api_hash)  # Initialize bot client with token
 
 @app.on_message(filters.command('start'))
 async def start(client, message):
@@ -86,21 +93,23 @@ async def login(client, message):
         
         # Log into the chosen account session
         session_name = session_files[choice]
-        async with Client(session_name) as user_client:
-            # After login, ask for the group to add users
-            await message.reply(f"Logged in as {session_name}. Now send the group chat username (with @) and the JSON file.")
-            return
-
+        global active_session_index
+        active_session_index = choice  # Store the active session index
+        
+        # Now login to the selected account
+        await message.reply(f"Logged in as {session_name}. Now send the group chat username (with @) and the JSON file to add members.")
     except Exception as e:
         await message.reply(f"Error: {e}")
 
 @app.on_message(filters.command('add_members'))
 async def add_users(client, message):
     try:
-        # Parse the group chat username
+        if active_session_index is None:
+            await message.reply("No account is logged in. Please log in first using /login <account_number>.")
+            return
+        
+        # Get the group chat username and the JSON file containing user IDs
         group_chat = message.text.splitlines()[1].strip()  # Extract group chat username (with @)
-
-        # Get the JSON file with user IDs attached by the user
         json_file = message.document.file_name  # The user needs to send the JSON file with user IDs
 
         # Download the JSON file
@@ -113,8 +122,9 @@ async def add_users(client, message):
             await message.reply("No user IDs found in the JSON file.")
             return
 
-        # Add users to the group using the selected account
-        async with Client("selected_account") as user_client:  # Replace with actual client session name
+        # Log into the selected session
+        session_name = session_files[active_session_index]
+        async with Client(session_name, api_id=api_id, api_hash=api_hash) as user_client:
             await add_members(user_client, group_chat, user_ids)
             await message.reply("Users have been added successfully!")
 
@@ -124,6 +134,10 @@ async def add_users(client, message):
 @app.on_message(filters.command('add'))
 async def add_single(client, message):
     try:
+        if active_session_index is None:
+            await message.reply("No account is logged in. Please log in first using /login <account_number>.")
+            return
+        
         # Extract the group chat and user ID or username from the message
         args = message.text.split()
         if len(args) < 3:
@@ -134,7 +148,8 @@ async def add_single(client, message):
         user_identifier = args[2]
 
         # Add the single user
-        async with Client("selected_account") as user_client:  # Replace with actual client session name
+        session_name = session_files[active_session_index]
+        async with Client(session_name, api_id=api_id, api_hash=api_hash) as user_client:
             await add_single_member(user_client, group_chat, user_identifier)
             await message.reply(f"User {user_identifier} has been added to the group {group_chat}!")
 
