@@ -10,15 +10,12 @@ bot_token = "6996568724:AAFrjf88-0uUXJumDiuV6CbVuXCJvT-4KbY"  # Replace with you
 api_id = "12834603"  # Replace with your API ID
 api_hash = "84a5daf7ac334a70b3fbd180616a76c6"  # Replace with your API Hash
 
-# List of session files for different accounts
-session_files = ["account1", "account2", "account3"]  # Replace with your session names
-
-# Store the active session index (initialize with None)
-active_session_index = None
+# A dictionary to store active session indices by user
+active_sessions = {}
 
 # Function to display available accounts
 def show_accounts():
-    return "\n".join([f"{i+1}. {session_files[i]}" for i in range(len(session_files))])
+    return "\n".join([f"{i+1}. Account {i+1}" for i in range(len(active_sessions))])
 
 # Function to read user IDs from a JSON file
 def read_user_ids_from_json(json_file):
@@ -79,42 +76,62 @@ app = Client("bot_session", bot_token=bot_token, api_id=api_id, api_hash=api_has
 
 @app.on_message(filters.command('start'))
 async def start(client, message):
-    # Display accounts to choose from
-    await message.reply("Choose your account to log in:\n" + show_accounts())
+    # Display instructions
+    await message.reply("Welcome to the bot! Please login by providing a unique number to create a session.\n"
+                         "Example: /login 1234")
 
 @app.on_message(filters.command('login'))
 async def login(client, message):
     try:
-        # Get account choice from the message (user input)
-        choice = int(message.text.split()[1]) - 1  # Get account number, converting to zero-index
-        if choice < 0 or choice >= len(session_files):
-            await message.reply("Invalid account choice. Please choose a valid account.")
+        # Get account number from the message
+        args = message.text.split()
+        if len(args) < 2:
+            await message.reply("Please provide a unique number to create a session. Example: /login 1234")
             return
         
-        # Log into the chosen account session
-        session_name = session_files[choice]
-        global active_session_index
-        active_session_index = choice  # Store the active session index
+        # Extract the account number (used as session name)
+        account_number = args[1]
         
-        # Now login to the selected account
-        await message.reply(f"Logged in as {session_name}. Now send the group chat username (with @) and the JSON file to add members.")
+        # Check if the account number already exists in active sessions
+        if account_number in active_sessions:
+            await message.reply(f"Account with number {account_number} is already logged in.")
+            return
+        
+        # Create a new session for the account number
+        session_name = f"session_{account_number}"
+        
+        # Initialize a new client session with the unique number as the session file
+        async with Client(session_name, api_id=api_id, api_hash=api_hash) as user_client:
+            # Store the session in the active_sessions dictionary
+            active_sessions[account_number] = session_name
+            
+            # Respond to the user
+            await message.reply(f"Successfully logged in as {account_number}. You can now add members.")
+    
     except Exception as e:
         await message.reply(f"Error: {e}")
 
 @app.on_message(filters.command('add_members'))
 async def add_users(client, message):
     try:
-        if active_session_index is None:
-            await message.reply("No account is logged in. Please log in first using /login <account_number>.")
+        # Get the account number (session) and check if the user is logged in
+        args = message.text.splitlines()
+        if len(args) < 2:
+            await message.reply("Please provide the group chat username (with @) and the JSON file with user IDs.")
             return
         
-        # Get the group chat username and the JSON file containing user IDs
-        group_chat = message.text.splitlines()[1].strip()  # Extract group chat username (with @)
-        json_file = message.document.file_name  # The user needs to send the JSON file with user IDs
+        group_chat = args[1].strip()  # Extract group chat username (with @)
+        
+        # User needs to send a document (JSON file with user IDs)
+        if message.document is None:
+            await message.reply("Please send a JSON file with user IDs.")
+            return
+        
+        json_file = message.document.file_name  # Get JSON file name
 
         # Download the JSON file
         downloaded_file = await message.document.download()
-        
+
         # Read the user IDs from the JSON file
         user_ids = read_user_ids_from_json(downloaded_file)
 
@@ -122,8 +139,16 @@ async def add_users(client, message):
             await message.reply("No user IDs found in the JSON file.")
             return
 
-        # Log into the selected session
-        session_name = session_files[active_session_index]
+        # Check if the user is logged in by looking at the active sessions
+        if not active_sessions:
+            await message.reply("You need to log in first using /login <unique_number>.")
+            return
+        
+        # Use the first session available (for simplicity)
+        account_number = list(active_sessions.keys())[0]
+        session_name = active_sessions[account_number]
+
+        # Log in to the selected session and add users
         async with Client(session_name, api_id=api_id, api_hash=api_hash) as user_client:
             await add_members(user_client, group_chat, user_ids)
             await message.reply("Users have been added successfully!")
@@ -134,10 +159,6 @@ async def add_users(client, message):
 @app.on_message(filters.command('add'))
 async def add_single(client, message):
     try:
-        if active_session_index is None:
-            await message.reply("No account is logged in. Please log in first using /login <account_number>.")
-            return
-        
         # Extract the group chat and user ID or username from the message
         args = message.text.split()
         if len(args) < 3:
@@ -147,8 +168,16 @@ async def add_single(client, message):
         group_chat = args[1]
         user_identifier = args[2]
 
+        # Check if the user is logged in by looking at the active sessions
+        if not active_sessions:
+            await message.reply("You need to log in first using /login <unique_number>.")
+            return
+        
+        # Use the first session available (for simplicity)
+        account_number = list(active_sessions.keys())[0]
+        session_name = active_sessions[account_number]
+
         # Add the single user
-        session_name = session_files[active_session_index]
         async with Client(session_name, api_id=api_id, api_hash=api_hash) as user_client:
             await add_single_member(user_client, group_chat, user_identifier)
             await message.reply(f"User {user_identifier} has been added to the group {group_chat}!")
